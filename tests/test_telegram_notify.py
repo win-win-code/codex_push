@@ -28,8 +28,7 @@ class FakeResponse:
 
 
 class MessageTests(unittest.TestCase):
-    @mock.patch.object(notifier, "_current_time", return_value="19:42")
-    def test_completion_uses_only_safe_fields_and_truncates_result(self, _time):
+    def test_completion_uses_only_safe_fields_and_truncates_result(self):
         secret_prompt = "do not include this user prompt"
         message = notifier.build_message(
             {
@@ -40,24 +39,29 @@ class MessageTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("✅ Codex завершил задачу", message)
+        self.assertTrue(message.startswith("✅\n\n"))
         self.assertIn("Проект: cvjn", message)
-        self.assertIn("Время: 19:42", message)
+        self.assertTrue(message.endswith("Проект: cvjn"))
         self.assertNotIn(secret_prompt, message)
-        result = message.split("Результат: ", 1)[1].split("\nВремя:", 1)[0]
+        result = message.split("✅\n\n", 1)[1].split("\n\nПроект:", 1)[0]
         self.assertEqual(len(result), notifier.MAX_RESULT_CHARS)
         self.assertTrue(result.endswith("…"))
 
-    def test_permission_request_is_ignored(self):
-        self.assertIsNone(
-            notifier.build_message(
+    def test_permission_request_uses_attention_icon(self):
+        message = notifier.build_message(
             {
                 "hook_event_name": "PermissionRequest",
                 "cwd": "/tmp/cvjn",
                 "tool_name": "Bash",
                 "tool_input": {"command": "curl -H 'Authorization: secret-token'"},
             }
-            )
+        )
+        self.assertEqual(
+            message,
+            "🔔\n\n"
+            "Нужно подтверждение: запуск команды.\n"
+            "Откройте Codex для подтверждения.\n\n"
+            "Проект: cvjn",
         )
 
     def test_manual_test_message(self):

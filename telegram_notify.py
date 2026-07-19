@@ -89,19 +89,15 @@ def _project_name(event):
     return _compact(project, 100) or "неизвестно"
 
 
-def _current_time():
-    try:
-        result = subprocess.run(
-            ["/bin/date", "+%H:%M"],
-            capture_output=True,
-            text=True,
-            timeout=1,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "—"
-    value = result.stdout.strip()
-    return value if result.returncode == 0 and len(value) == 5 else "—"
+def _permission_action(event):
+    tool_name = event.get("tool_name")
+    if tool_name == "Bash":
+        return "запуск команды"
+    if tool_name in ("apply_patch", "Edit", "Write"):
+        return "изменение файлов"
+    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
+        return "доступ ко внешнему инструменту"
+    return "выполнение действия"
 
 
 def _is_structured_turn_result(value):
@@ -127,10 +123,17 @@ def build_message(event, test_mode=False):
         if not result:
             return None
         return (
-            "✅ Codex завершил задачу\n\n"
-            f"Проект: {_project_name(event)}\n"
-            f"Результат: {result}\n"
-            f"Время: {_current_time()}"
+            "✅\n\n"
+            f"{result}\n\n"
+            f"Проект: {_project_name(event)}"
+        )
+
+    if event.get("hook_event_name") == "PermissionRequest":
+        return (
+            "🔔\n\n"
+            f"Нужно подтверждение: {_permission_action(event)}.\n"
+            "Откройте Codex для подтверждения.\n\n"
+            f"Проект: {_project_name(event)}"
         )
 
     return None
