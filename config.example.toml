@@ -1,0 +1,12 @@
+# This is a fragment for ~/.codex/config.toml, not a project config.
+# Keep notify at the top level (before any [table] that follows it).
+notify = ["/usr/bin/python3", "/Users/USERNAME/.codex/telegram_notify.py"]
+
+[[hooks.PermissionRequest]]
+matcher = ".*"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = '/usr/bin/python3 "/Users/USERNAME/.codex/telegram_notify.py"'
+timeout = 10
+statusMessage = "Sending Telegram notification"
