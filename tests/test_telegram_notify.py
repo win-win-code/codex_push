@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import subprocess
 import sys
 import unittest
 import urllib.error
@@ -94,34 +95,35 @@ class TelegramTests(unittest.TestCase):
         read_keychain.assert_not_called()
         post_telegram.assert_not_called()
 
-    @mock.patch.object(notifier, "_read_screen_lock_state", return_value=False)
-    def test_unlocked_screen_suppresses_notification(self, read_state):
-        self.assertFalse(notifier._should_send_notification())
-        read_state.assert_called_once()
-
-    @mock.patch.object(notifier, "_read_screen_lock_state", return_value=None)
-    def test_unknown_screen_state_does_not_drop_notification(self, read_state):
-        self.assertTrue(notifier._should_send_notification())
-        read_state.assert_called_once()
-
-    @mock.patch.object(notifier, "_should_send_notification", return_value=True)
-    @mock.patch.object(notifier, "_read_keychain")
-    @mock.patch.object(notifier, "_post_telegram", return_value=True)
-    def test_main_sends_when_screen_state_is_unknown(
-        self, post_telegram, read_keychain, should_send_notification
-    ):
-        read_keychain.side_effect = ["123456:token", "123456789"]
-        event = json.dumps(
-            {
-                "type": "agent-turn-complete",
-                "cwd": "/tmp/project",
-                "last-assistant-message": "completed",
-            }
+    @mock.patch.object(notifier.subprocess, "run")
+    def test_ioreg_reports_a_locked_console(self, run):
+        run.return_value = subprocess.CompletedProcess(
+            [notifier.IOREG, "-p", "IOService", "-d", "0", "-l"],
+            0,
+            stdout='  |   "IOConsoleLocked" = Yes\n',
         )
 
-        self.assertEqual(notifier.main([event]), 0)
-        should_send_notification.assert_called_once()
-        post_telegram.assert_called_once()
+        self.assertTrue(notifier._should_send_notification())
+        self.assertEqual(
+            run.call_args.args[0],
+            [notifier.IOREG, "-p", "IOService", "-d", "0", "-l"],
+        )
+        self.assertEqual(run.call_args.kwargs["timeout"], 2)
+
+    @mock.patch.object(notifier.subprocess, "run")
+    def test_ioreg_reports_an_unlocked_console(self, run):
+        run.return_value = subprocess.CompletedProcess(
+            [notifier.IOREG, "-p", "IOService", "-d", "0", "-l"],
+            0,
+            stdout='  |   "IOConsoleLocked" = No\n',
+        )
+
+        self.assertFalse(notifier._should_send_notification())
+
+    @mock.patch.object(notifier, "_read_screen_lock_state", return_value=None)
+    def test_unknown_screen_state_fails_closed(self, read_state):
+        self.assertFalse(notifier._should_send_notification())
+        read_state.assert_called_once()
 
     @mock.patch.object(notifier.urllib.request, "urlopen")
     def test_post_uses_fixed_host_post_and_expected_payload(self, urlopen):

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Send safe, one-way Codex notifications to a single Telegram chat."""
 
-import json
 import subprocess
 import sys
-import ctypes
+import json
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,10 +17,7 @@ MAX_INPUT_CHARS = 1_000_000
 MAX_RESULT_CHARS = 1_500
 HTTP_TIMEOUT_SECONDS = 5
 TELEGRAM_API_ROOT = "https://api.telegram.org"
-CORE_GRAPHICS = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
-CORE_FOUNDATION = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
-SCREEN_LOCKED_KEY = b"kCGSSessionScreenIsLocked"
-UTF8_ENCODING = 0x08000100
+IOREG = "/usr/sbin/ioreg"
 
 
 def _log_error(message):
@@ -56,58 +52,31 @@ def _read_keychain(service):
 
 
 def _read_screen_lock_state():
-    """Read the lock flag from the current macOS graphical session."""
+    """Read the system-wide macOS console lock flag."""
     try:
-        graphics = ctypes.CDLL(CORE_GRAPHICS)
-        foundation = ctypes.CDLL(CORE_FOUNDATION)
-        graphics.CGSessionCopyCurrentDictionary.argtypes = []
-        graphics.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
-        foundation.CFStringCreateWithCString.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_char_p,
-            ctypes.c_uint32,
-        ]
-        foundation.CFStringCreateWithCString.restype = ctypes.c_void_p
-        foundation.CFDictionaryGetValue.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-        ]
-        foundation.CFDictionaryGetValue.restype = ctypes.c_void_p
-        foundation.CFGetTypeID.argtypes = [ctypes.c_void_p]
-        foundation.CFGetTypeID.restype = ctypes.c_ulong
-        foundation.CFBooleanGetTypeID.argtypes = []
-        foundation.CFBooleanGetTypeID.restype = ctypes.c_ulong
-        foundation.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
-        foundation.CFBooleanGetValue.restype = ctypes.c_bool
-        foundation.CFRelease.argtypes = [ctypes.c_void_p]
-        foundation.CFRelease.restype = None
-
-        session = graphics.CGSessionCopyCurrentDictionary()
-        if not session:
-            return None
-        key = foundation.CFStringCreateWithCString(
-            None, SCREEN_LOCKED_KEY, UTF8_ENCODING
+        result = subprocess.run(
+            [IOREG, "-p", "IOService", "-d", "0", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
         )
-        if not key:
-            foundation.CFRelease(session)
-            return None
-        try:
-            value = foundation.CFDictionaryGetValue(session, key)
-            if not value or (
-                foundation.CFGetTypeID(value) != foundation.CFBooleanGetTypeID()
-            ):
-                return None
-            return bool(foundation.CFBooleanGetValue(value))
-        finally:
-            foundation.CFRelease(key)
-            foundation.CFRelease(session)
-    except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
+    except (OSError, subprocess.SubprocessError):
         return None
+
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if '"IOConsoleLocked" = Yes' in line:
+            return True
+        if '"IOConsoleLocked" = No' in line:
+            return False
+    return None
 
 
 def _should_send_notification():
-    """Suppress only when macOS positively reports an unlocked screen."""
-    return _read_screen_lock_state() is not False
+    """Send only when macOS positively reports a locked screen."""
+    return _read_screen_lock_state() is True
 
 
 def _valid_token(token):
@@ -260,8 +229,8 @@ def main(arguments=None):
     if message is None:
         return 0
 
-    # Codex invokes this hook outside a Quartz GUI session, where CoreGraphics
-    # legitimately returns no session state. Do not lose a notification then.
+    # IOConsoleLocked is system-wide and remains available to Codex's background
+    # hook. If its status cannot be read, preserve privacy and do not send.
     if not test_mode and not _should_send_notification():
         return 0
 
