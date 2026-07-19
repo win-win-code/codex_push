@@ -1,4 +1,6 @@
-# Telegram-уведомления Codex
+# codex_push
+
+## Telegram-уведомления Codex
 
 Минимальный one-way бот для macOS. Скрипт запускается только на событиях Codex, делает POST в Telegram и завершается. Фонового сервиса, polling и запросов к модели нет.
 
