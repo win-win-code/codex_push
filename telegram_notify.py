@@ -105,9 +105,9 @@ def _read_screen_lock_state():
         return None
 
 
-def _screen_is_locked():
-    """Return True only when macOS positively reports a locked screen."""
-    return _read_screen_lock_state() is True
+def _should_send_notification():
+    """Suppress only when macOS positively reports an unlocked screen."""
+    return _read_screen_lock_state() is not False
 
 
 def _valid_token(token):
@@ -260,9 +260,9 @@ def main(arguments=None):
     if message is None:
         return 0
 
-    # Never send task notifications while the current macOS session is visible.
-    # If macOS cannot confirm the status, preserve privacy and do not send.
-    if not test_mode and not _screen_is_locked():
+    # Codex invokes this hook outside a Quartz GUI session, where CoreGraphics
+    # legitimately returns no session state. Do not lose a notification then.
+    if not test_mode and not _should_send_notification():
         return 0
 
     try:
