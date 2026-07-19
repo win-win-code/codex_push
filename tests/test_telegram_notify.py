@@ -75,6 +75,35 @@ class MessageTests(unittest.TestCase):
 
 
 class TelegramTests(unittest.TestCase):
+    @mock.patch.object(notifier, "_screen_is_locked", return_value=False)
+    @mock.patch.object(notifier, "_read_keychain")
+    @mock.patch.object(notifier, "_post_telegram")
+    def test_main_skips_notifications_when_screen_is_unlocked(
+        self, post_telegram, read_keychain, screen_is_locked
+    ):
+        event = json.dumps(
+            {
+                "type": "agent-turn-complete",
+                "cwd": "/tmp/project",
+                "last-assistant-message": "completed",
+            }
+        )
+
+        self.assertEqual(notifier.main([event]), 0)
+        screen_is_locked.assert_called_once()
+        read_keychain.assert_not_called()
+        post_telegram.assert_not_called()
+
+    @mock.patch.object(notifier, "_read_screen_lock_state", return_value=True)
+    def test_screen_is_locked_accepts_only_a_locked_session(self, read_state):
+        self.assertTrue(notifier._screen_is_locked())
+        read_state.assert_called_once()
+
+    @mock.patch.object(notifier, "_read_screen_lock_state", return_value=None)
+    def test_screen_is_locked_fails_closed(self, read_state):
+        self.assertFalse(notifier._screen_is_locked())
+        read_state.assert_called_once()
+
     @mock.patch.object(notifier.urllib.request, "urlopen")
     def test_post_uses_fixed_host_post_and_expected_payload(self, urlopen):
         urlopen.return_value = FakeResponse({"ok": True})
@@ -130,17 +159,21 @@ class TelegramTests(unittest.TestCase):
         )
         stderr = io.StringIO()
         with (
+            mock.patch.object(notifier, "_screen_is_locked", return_value=True),
             mock.patch.object(
                 notifier,
                 "_read_keychain",
                 side_effect=["123456:very-secret-token", "123456789"],
             ),
-            mock.patch.object(notifier, "_post_telegram", return_value=False),
+            mock.patch.object(
+                notifier, "_post_telegram", return_value=False
+            ) as post_telegram,
             contextlib.redirect_stderr(stderr),
         ):
             result = notifier.main([event])
 
         self.assertEqual(result, 0)
+        post_telegram.assert_called_once()
         self.assertNotIn("private task result", stderr.getvalue())
         self.assertNotIn("very-secret-token", stderr.getvalue())
 

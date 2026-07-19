@@ -4,6 +4,7 @@
 import json
 import subprocess
 import sys
+import ctypes
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +18,10 @@ MAX_INPUT_CHARS = 1_000_000
 MAX_RESULT_CHARS = 1_500
 HTTP_TIMEOUT_SECONDS = 5
 TELEGRAM_API_ROOT = "https://api.telegram.org"
+CORE_GRAPHICS = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+CORE_FOUNDATION = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+SCREEN_LOCKED_KEY = b"kCGSSessionScreenIsLocked"
+UTF8_ENCODING = 0x08000100
 
 
 def _log_error(message):
@@ -48,6 +53,61 @@ def _read_keychain(service):
     if result.returncode != 0 or not value:
         return None
     return value
+
+
+def _read_screen_lock_state():
+    """Read the lock flag from the current macOS graphical session."""
+    try:
+        graphics = ctypes.CDLL(CORE_GRAPHICS)
+        foundation = ctypes.CDLL(CORE_FOUNDATION)
+        graphics.CGSessionCopyCurrentDictionary.argtypes = []
+        graphics.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
+        foundation.CFStringCreateWithCString.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_uint32,
+        ]
+        foundation.CFStringCreateWithCString.restype = ctypes.c_void_p
+        foundation.CFDictionaryGetValue.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        foundation.CFDictionaryGetValue.restype = ctypes.c_void_p
+        foundation.CFGetTypeID.argtypes = [ctypes.c_void_p]
+        foundation.CFGetTypeID.restype = ctypes.c_ulong
+        foundation.CFBooleanGetTypeID.argtypes = []
+        foundation.CFBooleanGetTypeID.restype = ctypes.c_ulong
+        foundation.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+        foundation.CFBooleanGetValue.restype = ctypes.c_bool
+        foundation.CFRelease.argtypes = [ctypes.c_void_p]
+        foundation.CFRelease.restype = None
+
+        session = graphics.CGSessionCopyCurrentDictionary()
+        if not session:
+            return None
+        key = foundation.CFStringCreateWithCString(
+            None, SCREEN_LOCKED_KEY, UTF8_ENCODING
+        )
+        if not key:
+            foundation.CFRelease(session)
+            return None
+        try:
+            value = foundation.CFDictionaryGetValue(session, key)
+            if not value or (
+                foundation.CFGetTypeID(value) != foundation.CFBooleanGetTypeID()
+            ):
+                return None
+            return bool(foundation.CFBooleanGetValue(value))
+        finally:
+            foundation.CFRelease(key)
+            foundation.CFRelease(session)
+    except (AttributeError, OSError, TypeError, ValueError, ctypes.ArgumentError):
+        return None
+
+
+def _screen_is_locked():
+    """Return True only when macOS positively reports a locked screen."""
+    return _read_screen_lock_state() is True
 
 
 def _valid_token(token):
@@ -198,6 +258,11 @@ def main(arguments=None):
         return 0
 
     if message is None:
+        return 0
+
+    # Never send task notifications while the current macOS session is visible.
+    # If macOS cannot confirm the status, preserve privacy and do not send.
+    if not test_mode and not _screen_is_locked():
         return 0
 
     try:
