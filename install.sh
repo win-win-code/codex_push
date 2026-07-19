@@ -18,12 +18,4 @@ printf "Enter Telegram chat_id in the secure Keychain prompt.\n"
 printf "\nInstalled: %s\n" "${TARGET_SCRIPT}"
 printf "Add this top-level setting near the beginning of %s/config.toml:\n\n" "${CODEX_DIR}"
 printf 'notify = ["/usr/bin/python3", "%s"]\n\n' "${TARGET_SCRIPT}"
-printf "Add this hook anywhere after the top-level notify setting:\n\n"
-printf '[[hooks.PermissionRequest]]\n'
-printf 'matcher = ".*"\n\n'
-printf '[[hooks.PermissionRequest.hooks]]\n'
-printf 'type = "command"\n'
-printf "command = '/usr/bin/python3 \"%s\"'\n" "${TARGET_SCRIPT}"
-printf 'timeout = 10\n'
-printf 'statusMessage = "Sending Telegram notification"\n\n'
 printf "Then run: /usr/bin/python3 %s --test\n" "${TARGET_SCRIPT}"

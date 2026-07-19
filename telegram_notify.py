@@ -104,17 +104,6 @@ def _current_time():
     return value if result.returncode == 0 and len(value) == 5 else "—"
 
 
-def _permission_action(event):
-    tool_name = event.get("tool_name")
-    if tool_name == "Bash":
-        return "запуск команды"
-    if tool_name in ("apply_patch", "Edit", "Write"):
-        return "изменение файлов"
-    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
-        return "доступ ко внешнему инструменту"
-    return "выполнение действия"
-
-
 def _is_structured_turn_result(value):
     """Ignore Codex's internal JSON progress payloads."""
     if not isinstance(value, str) or value.lstrip()[:1] not in ("{", "["):
@@ -142,14 +131,6 @@ def build_message(event, test_mode=False):
             f"Проект: {_project_name(event)}\n"
             f"Результат: {result}\n"
             f"Время: {_current_time()}"
-        )
-
-    if event.get("hook_event_name") == "PermissionRequest":
-        return (
-            "⚠️ Codex ждёт разрешения\n\n"
-            f"Проект: {_project_name(event)}\n"
-            f"Действие: {_permission_action(event)}\n"
-            "Откройте Codex для подтверждения."
         )
 
     return None

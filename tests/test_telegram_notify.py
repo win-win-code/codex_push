@@ -48,20 +48,17 @@ class MessageTests(unittest.TestCase):
         self.assertEqual(len(result), notifier.MAX_RESULT_CHARS)
         self.assertTrue(result.endswith("…"))
 
-    def test_permission_never_includes_tool_input(self):
-        secret_command = "curl -H 'Authorization: secret-token'"
-        message = notifier.build_message(
+    def test_permission_request_is_ignored(self):
+        self.assertIsNone(
+            notifier.build_message(
             {
                 "hook_event_name": "PermissionRequest",
                 "cwd": "/tmp/cvjn",
                 "tool_name": "Bash",
-                "tool_input": {"command": secret_command},
+                "tool_input": {"command": "curl -H 'Authorization: secret-token'"},
             }
+            )
         )
-
-        self.assertIn("⚠️ Codex ждёт разрешения", message)
-        self.assertIn("Действие: запуск команды", message)
-        self.assertNotIn(secret_command, message)
 
     def test_manual_test_message(self):
         self.assertEqual(
