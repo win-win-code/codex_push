@@ -16,6 +16,7 @@ printf "Enter Telegram chat_id in the secure Keychain prompt.\n"
   -s codex-telegram-chat-id -w
 
 printf "\nInstalled: %s\n" "${TARGET_SCRIPT}"
-printf "Add this top-level setting near the beginning of %s/config.toml:\n\n" "${CODEX_DIR}"
+printf "If %s/config.toml has no top-level notify setting, add this near its beginning:\n\n" "${CODEX_DIR}"
 printf 'notify = ["/usr/bin/python3", "%s"]\n\n' "${TARGET_SCRIPT}"
+printf "If notify is already configured, do not replace it; add this notifier to its existing chain.\n"
 printf "Then run: /usr/bin/python3 %s --test\n" "${TARGET_SCRIPT}"
